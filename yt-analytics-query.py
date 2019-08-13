@@ -17,11 +17,13 @@ from bs4 import BeautifulSoup
 import re
 import urllib
 
-class yt:
+#This class logs into YouTube and collects stats via the Analytics API
+class YouTube:
 
     def __init__(self):
         print ("Logging into all the channels...")
         
+        #Login to all the Red Hat channels
         rhvideos = self.getInstance("Red Hat Videos","rhvideos_creds.dat")
         rhvirtualization = self.getInstance("Red Hat Virtualization","rhvirtualization_creds.dat")
         rhmiddleware = self.getInstance("Red Hat Middleware","rhmiddleware_creds.dat")
@@ -32,6 +34,7 @@ class yt:
         rhsummit = self.getInstance("Red Hat Summit","rhsummit_creds.dat")
         rhlinux = self.getInstance("Red Hat Enterprise Linux","rhlinux_creds.dat")
 
+        #Save the instances in a dictionary, so the correct one can be selected based on the channel ID
         self.instances = {
             "UCp6NUFV9mSEK6RxUiEVymVg":rhvideos,
             "UCMdzdYJY7y12A367ycm-c4A":rhvirtualization,
@@ -43,13 +46,8 @@ class yt:
             "UC9CjkhQp1jX8Hbtbg6OZ9dw":rhsummit,
             "UCG5LuxhUtax6wVhH1qPNxvA":rhlinux
         }
-
-    def selectInstance(self, c_id):
-        if c_id in self.instances:
-            return self.instances[c_id]
-        else:
-            return None
-
+    
+    #This method logs into a YouTube account and returns an instance
     def getInstance(self, name, token_file):
         print ("----------------------------")
         print ("Getting instance: " + name)
@@ -70,11 +68,15 @@ class yt:
 
         return build(api_name, api_version, credentials = credentials)
 
-    
-    def execute_api_request(self, client_library_function, **kwargs):
-        response = client_library_function(**kwargs).execute()
-        return response
+    #This method selects the right YouTube instance based on the channel ID
+    def selectInstance(self, c_id):
+        if c_id in self.instances:
+            return self.instances[c_id]
+        else:
+            return None
 
+    #This method grabs stats from a YouTube video using the Analytics API. It calls the correct YouTube instance using the
+    #selectInstance method. It returns a Dataframe with the data requested. Thank you @grountre.
     def getVideoStats(self, yt_id, c_id, startdate, enddate):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
         yt_instance = self.selectInstance(c_id)
@@ -82,7 +84,7 @@ class yt:
             print ("This YouTube video is not from Red Hat.")
             return None
         else:
-            response = self.execute_api_request(
+            response = self.executeAPIRequest(
                 yt_instance.reports().query,
                 ids="channel==" + c_id,
                 startDate=startdate,
@@ -102,9 +104,17 @@ class yt:
             table.columns = headers
 
             return table
-    
+
+    #This method executes the API request. Thank you @grountre.
+    def executeAPIRequest(self, client_library_function, **kwargs):
+        response = client_library_function(**kwargs).execute()
+        return response
+
+#This class identifies the correct YouTube channel ID per a given YouTube video ID
 class Channels:
     
+    #This method scrapes a YouTube video webpage to find the channel ID in the HTML metadata. It saves the
+    #channel ID to a video_dictionary.csv so it isn't necessary to scrape YouTube for a past hit.
     def scrapeChannel(self, yt_id):
         try:
             page = urllib.request.urlopen("https://www.youtube.com/watch?v=" + yt_id)
@@ -126,6 +136,8 @@ class Channels:
         else:
             return None
 
+    #This method attempts to lookup a channel ID in video_dictionary.csv. If it doesn't exist, it scrapes 
+    #YouTube to get the information using the scrapeChannel method.
     def findChannel(self, yt_id):
         self.lookup = pd.read_csv('video_dictionary.csv')
         if yt_id in self.lookup.video.values:
@@ -144,7 +156,7 @@ drupal_videos = pd.read_csv('in_drupal_videos.csv')
 
 #Instatiate YT and Channels
 yt_channel = Channels()
-yt = yt()
+YouTube = YouTube()
 
 #Set start date and end date
 startdate = "2017-02-28"
@@ -155,6 +167,7 @@ new_rows = ['views','likes','dislikes','comments','shares','estimatedMinutesWatc
 for x in new_rows:
     drupal_videos[x] = ""
 
+#Loop through the drupal Videos export to get stats
 for i, row in drupal_videos.iterrows():
     print ("-------------------")
     
@@ -164,12 +177,14 @@ for i, row in drupal_videos.iterrows():
     c_id = yt_channel.findChannel(yt_id)
     print ("Channel ID: " + str(c_id))
 
+    #Error checking: Ensure a channel ID is returned
     if c_id is not None:
     
-        table = yt.getVideoStats(yt_id, c_id, startdate, enddate)
+        table = YouTube.getVideoStats(yt_id, c_id, startdate, enddate)
         print ("Stats:")
         print (table)
 
+        #Error checking: Ensure YouTube data is returned
         if table is not None:
             print ("Saving file...")
             drupal_videos.at[i,"views"]=table["views"].values[0]
