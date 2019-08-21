@@ -24,15 +24,19 @@ class YouTube:
         print ("Logging into all the channels...")
         
         #Login to all the Red Hat channels
-        rhvideos = self.getInstance("Red Hat Videos","rhvideos_creds.dat")
-        rhvirtualization = self.getInstance("Red Hat Virtualization","rhvirtualization_creds.dat")
-        rhmiddleware = self.getInstance("Red Hat Middleware","rhmiddleware_creds.dat")
-        rhstorage = self.getInstance("Red Hat Storage","rhstorage_creds.dat")
-        rhcloud = self.getInstance("Red Hat Cloud","rhcloud_creds.dat")
-        rhlatinoamerica = self.getInstance("Red Hat Latinoamerica","rhlatinoamerica_creds.dat")
-        rhapac = self.getInstance("Red Hat APAC","rhapac_creds.dat")
-        rhsummit = self.getInstance("Red Hat Summit","rhsummit_creds.dat")
-        rhlinux = self.getInstance("Red Hat Enterprise Linux","rhlinux_creds.dat")
+        rhvideos = self.getInstance("Red Hat Videos","client_secrets.json","rhvideos_creds.dat")
+        rhvirtualization = self.getInstance("Red Hat Virtualization","client_secrets.json","rhvirtualization_creds.dat")
+        rhmiddleware = self.getInstance("Red Hat Middleware","client_secrets.json","rhmiddleware_creds.dat")
+        rhstorage = self.getInstance("Red Hat Storage","client_secrets.json","rhstorage_creds.dat")
+        rhcloud = self.getInstance("Red Hat Cloud","client_secrets.json","rhcloud_creds.dat")
+        rhlatinoamerica = self.getInstance("Red Hat Latinoamerica","client_secrets.json","rhlatinoamerica_creds.dat")
+        rhapac = self.getInstance("Red Hat APAC","client_secrets.json","rhapac_creds.dat")
+        rhsummit = self.getInstance("Red Hat Summit","client_secrets.json","rhsummit_creds.dat")
+        rhlinux = self.getInstance("Red Hat Enterprise Linux","client_secrets.json","rhlinux_creds.dat")
+        rhemea = self.getInstance("Red Hat EMEA","client_secrets_emea.json","rhemea_creds.dat")
+
+        #Get the special Red Hat EMEA instance
+
 
         #Save the instances in a dictionary, so the correct one can be selected based on the channel ID
         self.instances = {
@@ -44,11 +48,12 @@ class YouTube:
             "UCe9KurO7bRXqRGn0756FYfA":rhlatinoamerica,
             "UCOghGALkYmQpJxj65TyWpAw":rhapac,
             "UC9CjkhQp1jX8Hbtbg6OZ9dw":rhsummit,
-            "UCG5LuxhUtax6wVhH1qPNxvA":rhlinux
+            "UCG5LuxhUtax6wVhH1qPNxvA":rhlinux,
+            "UCBwSCyzT3GukpVdUdxMjKYw":rhemea
         }
     
     #This method logs into a YouTube account and returns an instance
-    def getInstance(self, name, token_file):
+    def getInstance(self, name, creds, token_file):
         print ("----------------------------")
         print ("Getting instance: " + name)
         print ("----------------------------")
@@ -56,7 +61,6 @@ class YouTube:
         api_name = 'youtubeAnalytics'
         api_version = 'v2'
         scope = ['https://www.googleapis.com/auth/youtube.readonly']
-        creds = 'client_secrets.json'
         
         client_secrets = os.path.join(os.path.dirname(creds),creds)
         flow = client.flow_from_clientsecrets(client_secrets,scope=scope,message=tools.message_if_missing(client_secrets))
@@ -89,10 +93,10 @@ class YouTube:
                 ids="channel==" + c_id,
                 startDate=startdate,
                 endDate=enddate,
-                metrics="views,likes,dislikes,comments,shares,estimatedMinutesWatched,averageViewDuration",
+                metrics="views,likes,dislikes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage",
                 sort='-views',
                 filters="video==" + yt_id,
-                maxResults=200,
+                maxResults=10,
             )
 
             columns = response['columnHeaders']
@@ -160,10 +164,10 @@ YouTube = YouTube()
 
 #Set start date and end date
 startdate = "2017-02-28"
-enddate = "2019-08-11"
+enddate = "2019-08-20"
 
 #Add columns to drupal_videos
-new_rows = ['views','likes','dislikes','comments','shares','estimatedMinutesWatched','averageViewDuration']
+new_rows = ['views','likes','dislikes','comments','shares','estimatedMinutesWatched','averageViewDuration','averageViewPercentage']
 for x in new_rows:
     drupal_videos[x] = ""
 
@@ -194,6 +198,7 @@ for i, row in drupal_videos.iterrows():
             drupal_videos.at[i,"shares"]=table["shares"].values[0]
             drupal_videos.at[i,"estimatedMinutesWatched"]=table["estimatedMinutesWatched"].values[0]
             drupal_videos.at[i,"averageViewDuration"]=table["averageViewDuration"].values[0]
+            drupal_videos.at[i,"averageViewPercentage"]=table["averageViewPercentage"].values[0]
             drupal_videos.to_csv("final_video_inventory.csv")
 
         else:
