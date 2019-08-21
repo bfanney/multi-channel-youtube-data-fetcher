@@ -198,7 +198,7 @@ for i, row in drupal_videos.iterrows():
             drupal_videos.at[i,"shares"]=table["shares"].values[0]
             drupal_videos.at[i,"estimatedMinutesWatched"]=table["estimatedMinutesWatched"].values[0]
             drupal_videos.at[i,"averageViewDuration"]=table["averageViewDuration"].values[0]
-            drupal_videos.at[i,"averageViewPercentage"]=table["averageViewPercentage"].values[0]
+            drupal_videos.at[i,"averageViewPercentage"]=(int(table["averageViewPercentage"].values[0])/100)
             drupal_videos.to_csv("final_video_inventory.csv")
 
         else:
