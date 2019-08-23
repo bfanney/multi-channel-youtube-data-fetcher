@@ -16,6 +16,10 @@ from oauth2client import tools
 from bs4 import BeautifulSoup
 import re
 import urllib
+from datetime import date, datetime, timedelta
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from gspread_dataframe import get_as_dataframe, set_with_dataframe
 
 #This class logs into YouTube and collects stats via the Analytics API
 class YouTube:
@@ -106,6 +110,29 @@ class YouTube:
 
             table = pd.DataFrame.from_dict(response['rows'])
             table.columns = headers
+            
+            #add redhat.com embedded views here
+            response2 = self.executeAPIRequest(
+                yt_instance.reports().query,
+                ids="channel==" + c_id,
+                startDate=startdate,
+                endDate=enddate,
+                metrics="views,estimatedMinutesWatched",
+                sort='-views',
+                filters="video==" + yt_id + ";insightPlaybackLocationType==EMBEDDED",
+                dimensions="insightPlaybackLocationDetail",
+                maxResults=20,
+            )
+
+            rhviews=0
+            rhminuteswatched=""
+            for row in response2['rows']:
+                if row[0]=="redhat.com":
+                    rhviews=row[1]
+                    rhminuteswatched=row[2]
+
+            table["redhat.com views"]=rhviews
+            table["redhat.com minutes watched"]=rhminuteswatched
 
             return table
 
@@ -155,6 +182,40 @@ class Channels:
             self.lookup.to_csv('video_dictionary.csv')
             return channel
 
+class Sheets:
+
+    def __init__(self, creds, docid, worksheet_name):
+        self.docid = docid
+        self.worksheet_name = worksheet_name
+        
+        print ("Logging into Google.")
+        scope = ['https://spreadsheets.google.com/feeds']
+        credentials = ServiceAccountCredentials.from_json_keyfile_name(creds, scope)
+        client = gspread.authorize(credentials)
+        sh = client.open_by_key(self.docid)
+        self.worksheet = sh.worksheet(self.worksheet_name)
+
+    def setGoogleSheet(self, data):
+        print ("Uploading Google Sheet.")
+        set_with_dataframe(self.worksheet, data)
+
+    def blankGoogleSheet(self):
+        print ("Blanking Google Sheet.")
+        sheet = self.worksheet.get_all_values()
+
+        headers = sheet.pop(0)
+        sheet = pd.DataFrame(sheet, columns=headers)
+
+        length = len(sheet.index)+1
+
+        cells = "A2:AG" + str(length)
+
+        cell_list = self.worksheet.range(cells)
+        for cell in cell_list:
+            cell.value = ""
+
+        self.worksheet.update_cells(cell_list)
+
 #Read a Drupal video export
 drupal_videos = pd.read_csv('in_drupal_videos.csv')
 
@@ -164,17 +225,18 @@ YouTube = YouTube()
 
 #Set start date and end date
 startdate = "2017-02-28"
-enddate = "2019-08-20"
 
-#Add columns to drupal_videos
-new_rows = ['views','likes','dislikes','comments','shares','estimatedMinutesWatched','averageViewDuration','averageViewPercentage']
-for x in new_rows:
-    drupal_videos[x] = ""
+enddate = datetime.today()
+enddate = enddate.strftime("%Y-%m-%d")
+
+#enddate = "2019-08-20"
 
 #Loop through the drupal Videos export to get stats
 for i, row in drupal_videos.iterrows():
     print ("-------------------")
     
+    print ("Row: " + str(i))
+
     yt_id = row["File URL"].split("=")[1]
     print ("YouTube ID: " + yt_id)
     
@@ -191,14 +253,24 @@ for i, row in drupal_videos.iterrows():
         #Error checking: Ensure YouTube data is returned
         if table is not None:
             print ("Saving file...")
-            drupal_videos.at[i,"views"]=table["views"].values[0]
-            drupal_videos.at[i,"likes"]=table["likes"].values[0]
-            drupal_videos.at[i,"dislikes"]=table["dislikes"].values[0]
-            drupal_videos.at[i,"comments"]=table["comments"].values[0]
-            drupal_videos.at[i,"shares"]=table["shares"].values[0]
-            drupal_videos.at[i,"estimatedMinutesWatched"]=table["estimatedMinutesWatched"].values[0]
-            drupal_videos.at[i,"averageViewDuration"]=table["averageViewDuration"].values[0]
-            drupal_videos.at[i,"averageViewPercentage"]=(int(table["averageViewPercentage"].values[0])/100)
+            drupal_videos.at[i,"Views"]=table["views"].values[0]
+            drupal_videos.at[i,"redhat.com views"]=table["redhat.com views"].values[0]
+            drupal_videos.at[i,"Likes"]=table["likes"].values[0]
+            drupal_videos.at[i,"Dislikes"]=table["dislikes"].values[0]
+            drupal_videos.at[i,"Comments"]=table["comments"].values[0]
+            drupal_videos.at[i,"Shares"]=table["shares"].values[0]
+            drupal_videos.at[i,"Minutes watched"]=table["estimatedMinutesWatched"].values[0]
+            drupal_videos.at[i,"redhat.com minutes watched"]=table["redhat.com minutes watched"].values[0]
+            drupal_videos.at[i,"Average view duration"]=table["averageViewDuration"].values[0]
+            drupal_videos.at[i,"Average view percentage"]=(float(table["averageViewPercentage"].values[0])/100)
+           
+            #reorganize columns
+            drupal_videos=drupal_videos[['Views','Likes','Dislikes','Comments','Shares','Minutes watched',
+            'Average view duration','Average view percentage','redhat.com views','redhat.com minutes watched','Title','Meta Date','Channel',
+            'Success story type','Product','Product line','Solution','Services','Industry','Topic','Business challenge','Partners',
+            'Region','Featured Groupings','Offer ID','Original Author','Revision Author','Published','Updated Date','Language','File URL','Node ID']]
+            
+            #write file to disk
             drupal_videos.to_csv("final_video_inventory.csv")
 
         else:
@@ -206,3 +278,8 @@ for i, row in drupal_videos.iterrows():
 
     else:
         print ("Skipping video. Can't find the channel ID.")
+
+#Upload the final sheet to the inventory
+gsheets = Sheets("gsheet_creds.json","1PqPptUrQvRqWExXnCe-iPMAdyyCuhs_BTvYH2Gv9YGw","Videos")
+gsheets.blankGoogleSheet()
+gsheets.setGoogleSheet(drupal_videos)
