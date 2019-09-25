@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
+import pafy
 
 #This class logs into YouTube and collects stats via the Analytics API
 class YouTube:
@@ -92,6 +93,7 @@ class YouTube:
             print ("This YouTube video is not from Red Hat.")
             return None
         else:
+            #Get overall stats
             response = self.executeAPIRequest(
                 yt_instance.reports().query,
                 ids="channel==" + c_id,
@@ -131,8 +133,14 @@ class YouTube:
                     rhviews=row[1]
                     rhminuteswatched=row[2]
 
+            #get video length
+            url = "http://www.youtube.com/watch?v=" + yt_id
+            video = pafy.new(url)
+
+            #pass back a single table
             table["redhat.com views"]=rhviews
             table["redhat.com minutes watched"]=rhminuteswatched
+            table["video length"]=video.length
 
             return table
 
@@ -246,12 +254,24 @@ for i, row in drupal_videos.iterrows():
     #Error checking: Ensure a channel ID is returned
     if c_id is not None:
     
-        table = YouTube.getVideoStats(yt_id, c_id, startdate, enddate)
-        print ("Stats:")
-        print (table)
+        error_count = 0
+
+        try:
+            table = YouTube.getVideoStats(yt_id, c_id, startdate, enddate)
+        except Exception as e:
+            while error_count <= 5:
+                print ("Error getting video stats. Trying again.")
+                table = YouTube.getVideoStats(yt_id, c_id, startdate, enddate)
+                error_count += 1
+            if error_count >= 6:
+                print ("The script couldn't get video stats after 5 tries. Quitting now.")
+                sys.exit(0)                
 
         #Error checking: Ensure YouTube data is returned
         if table is not None:
+            table.replace('',0, inplace=True)
+            print ("Stats:")
+            print (table)
             print ("Saving file...")
             drupal_videos.at[i,"Views"]=table["views"].values[0]
             drupal_videos.at[i,"redhat.com views"]=table["redhat.com views"].values[0]
@@ -260,13 +280,18 @@ for i, row in drupal_videos.iterrows():
             drupal_videos.at[i,"Comments"]=table["comments"].values[0]
             drupal_videos.at[i,"Shares"]=table["shares"].values[0]
             drupal_videos.at[i,"Minutes watched"]=table["estimatedMinutesWatched"].values[0]
-            drupal_videos.at[i,"redhat.com minutes watched"]=table["redhat.com minutes watched"].values[0]
+            drupal_videos.at[i,"Video length"]=table["video length"].values[0]
+
+            print ("Red Hat minutes watched: ")
+            print (int(table["redhat.com minutes watched"].values[0]))
+
+            drupal_videos.at[i,"redhat.com minutes watched"]=int(table["redhat.com minutes watched"].values[0])
             drupal_videos.at[i,"Average view duration"]=table["averageViewDuration"].values[0]
             drupal_videos.at[i,"Average view percentage"]=(float(table["averageViewPercentage"].values[0])/100)
            
             #reorganize columns
             drupal_videos=drupal_videos[['Views','Likes','Dislikes','Comments','Shares','Minutes watched',
-            'Average view duration','Average view percentage','redhat.com views','redhat.com minutes watched','Title','Meta Date','Channel',
+            'Average view duration','Average view percentage','Video length','redhat.com views','redhat.com minutes watched','Title','Meta Date','Channel',
             'Success story type','Product','Product line','Solution','Services','Industry','Topic','Business challenge','Partners',
             'Region','Featured Groupings','Offer ID','Original Author','Revision Author','Published','Updated Date','Language','File URL','Node ID']]
             
